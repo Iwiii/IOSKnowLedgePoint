@@ -1,3 +1,8 @@
+---
+typora-root-url: ./资源/图片
+typora-copy-images-to: ./资源/图片
+---
+
 # IOS 知识点梳理
 
 [TOC]
@@ -748,10 +753,296 @@ Note over main : -[CALayer setContents:]
 1. KVC是Key-value coding的缩写
    - -(id)valueForKey:(NSString*)key
    - -(void)setValue:(id)value forKey:(NSString *)key
-2. 会破坏面向对象
-3. 
+
+2. 违背面向对象编程思想
+
+3. valueForKey 流程
+
+   ```flow
+   St=>start: Start
+   condi1=>condition: Accessor Method 
+                         is exist?
+   condi2=>condition: Instance var is exist? 
+   +(BOOL)accessInstanceVariablesDirectly
+   op1=>operation: Invoke
+   op3=>operation: valueForUndefinedKey:
+   op4=>operation: NSUndefinedKeyException
+   end=>end: End
+   St->condi1
+   condi1(yes)->op1->end
+   condi1(no)->condi2
+   condi2(yes)->op1
+   condi2(no)->op3->op4->end
+   ```
+
+4. Accessor Method
+
+   - `<getKey>`
+   - `<key>`
+   - `<isKey>`
+
+5. Instance var
+
+   - _key
+   - _isKey
+   - isKey
+
+6. setValueForKye
+
+   ```flow
+   st=>start: Start
+   condi1=>condition: Setter Method is exist?
+   condi2=>condition: Instance var is exist?
+   +(BOOL)accessInstanceVariablesDirectly
+   op1=>operation: Invoke
+   op2=>operation: setValue:ForUndefinedKey:
+   op3=>operation: NSUndefinedKeyException
+   end=>end: End
+   st->condi1
+   condi1(yes)->op1->end
+   condi1(no)->condi2
+   condi2(yes)->op1
+   condi2(no)->op2->op3->end
+   ```
+
 
 ### 属性关键字
+
+1. 读写权限
+
+   - readonly
+   - readwrite (default)
+
+2. 原子性
+
+   - atomic (default) 保证赋值和获取是线程安全的 比如对数组赋值就是安全的,但是对数组进行添加删除元素就不是
+   - nonatomic
+
+3. 引用计数
+
+   - retain/strong
+   - assign/unsafe_unretained
+   - weak
+
+4. assign
+
+   - 修饰基本数据类型,如int,BOOL等
+   - 修饰对象类型时,不改变其引用计数
+   - 会产生悬垂指针
+
+5. weak
+
+   - 不改变被修饰对象的引用计数
+   - 所指对象在释放后会自动置为nil
+
+6. copy
+
+   | 源码对象类型  |  拷贝方式   | 目标对象类型 | 拷贝类型(深/浅) |
+   | :-----------: | :---------: | :----------: | :-------------: |
+   |  mutable对象  |    copy     |    不可变    |     深拷贝      |
+   |  mutable对象  | mutableCopy |     可变     |     深拷贝      |
+   | immutable对象 |    copy     |    不可变    |     浅拷贝      |
+   | immutable对象 | mutableCopy |     可变     |     深拷贝      |
+
+
+
+### Objective-C 语言相关问题
+
+1. MRC下如何重写retain修饰变量的setter方法?
+
+   ``` objc
+   @proterty (nonatomic,retain) id obj;
+   - (void)setObj:(id)obj{
+       if(_obj != obj){
+           [_obj release];
+           _obj= [obj retain];
+       }
+   }
+   ```
+
+2. 请简述分类实现原理
+
+3. KVO的实现原理是怎样的?
+
+4. 能否为分类添加成员变量?
+
+
+
+## Runtime
+
+1. 数据结构
+
+   1. objc_object
+
+      - `id = objc_object`
+      - isa_t
+      - 关于isa操作相关
+      - 关联对象相关
+      - 内存管理相关
+
+   2. objc_class
+
+      - Class = objc_class
+
+      - 继承自objc_object
+
+        ``` c++
+        Class superClass;
+        cache_t cache;
+        class_data_bits_t bits;//变量属性方法在这里
+        ```
+
+   3. isa指针 
+
+      - 共用体isa_t
+      - 指针型isa isa的值代表Class的地址
+      - 非指针型isa的 值的部分 代表Class的地址//部分为关键,寻址有关,非指针型一般在64位架构下存在,这时一些诸如nsnumber等所谓的小对象的值会存储到指针值里面.
+      - isa指向
+        - 关于对象,其指向类对象 实例--------->Class
+        - 关于类对象,其指向元类对象 Class---------->metaClass
+
+   4. cache_t
+
+      - 用于快速查找方法执行函数
+      - 是可增量扩展的哈希表结构
+      - 是局部性原理的最佳应用 
+
+   5. class_data_bits_t
+
+      - class_data_bits_t 主要是对class_rw_t的封装
+
+      - class_rw_t代表了类相关的读写信息,对class_ro_t的封装
+
+      - class_ro_t 代表了类的只读信息
+
+        ```objc
+        struct class_rw_t {
+            // Be warned that Symbolication knows the layout of this structure.
+            uint32_t flags;
+            uint32_t version;
+        
+            const class_ro_t *ro;
+        
+            method_array_t methods;
+            property_array_t properties;
+            protocol_array_t protocols;
+        
+            Class firstSubclass;
+            Class nextSiblingClass;
+        
+            char *demangledName;
+        
+        #if SUPPORT_INDEXED_ISA
+            uint32_t index;
+        #endif
+        
+            void setFlags(uint32_t set) 
+            {
+                OSAtomicOr32Barrier(set, &flags);
+            }
+        
+            void clearFlags(uint32_t clear) 
+            {
+                OSAtomicXor32Barrier(clear, &flags);
+            }
+        
+            // set and clear must not overlap
+            void changeFlags(uint32_t set, uint32_t clear) 
+            {
+                assert((set & clear) == 0);
+        
+                uint32_t oldf, newf;
+                do {
+                    oldf = flags;
+                    newf = (oldf | set) & ~clear;
+                } while (!OSAtomicCompareAndSwap32Barrier(oldf, newf, (volatile int32_t *)&flags));
+            }
+        };
+        
+        struct class_ro_t {
+            uint32_t flags;
+            uint32_t instanceStart;
+            uint32_t instanceSize;
+        #ifdef __LP64__
+            uint32_t reserved;
+        #endif
+        
+            const uint8_t * ivarLayout;
+            
+            const char * name;
+            method_list_t * baseMethodList;
+            protocol_list_t * baseProtocols;
+            const ivar_list_t * ivars;
+        
+            const uint8_t * weakIvarLayout;
+            property_list_t *baseProperties;
+        
+            method_list_t *baseMethods() const {
+                return baseMethodList;
+            }
+        };
+        ```
+
+   6. method_t
+
+       ``` c++
+      struct method_t {
+          SEL name;//方法名称
+          const char *types;//函数返回值和参数组合 [返回值,参数1,参数2,参数3,...,参数n]
+          MethodListIMP imp;//函数体
+      
+          struct SortBySELAddress :
+              public std::binary_function<const method_t&,
+                                          const method_t&, bool>
+          {
+              bool operator() (const method_t& lhs,
+                               const method_t& rhs)
+              { return lhs.name < rhs.name; }
+          };
+      };
+       ```
+
+   7. 数据结构总结
+
+      ![Runtime数据结构](/Runtime数据结构.png)
+
+2. 类对象与原类对象
+
+3. 消息传递
+
+4. 方法缓存
+
+5. 消息转发
+
+6. Method-Swizzling
+
+7. 动态添加方法
+
+8. 动态方法解析
+
+## 内存管理
+
+## Blcok
+
+## 多线程
+
+## RunLoop
+
+## 网络相关
+
+## 设计模式
+
+## 架构/框架
+
+## 算法
+
+## 第三方库
+
+## 总结
+
+
+
+ 
 
 
 
