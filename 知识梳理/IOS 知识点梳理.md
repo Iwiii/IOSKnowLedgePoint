@@ -986,11 +986,11 @@ Note over main : -[CALayer setContents:]
    6. method_t
 
        ``` c++
-      struct method_t {
+         struct method_t {
           SEL name;//方法名称
           const char *types;//函数返回值和参数组合 [返回值,参数1,参数2,参数3,...,参数n]
           MethodListIMP imp;//函数体
-      
+         
           struct SortBySELAddress :
               public std::binary_function<const method_t&,
                                           const method_t&, bool>
@@ -999,14 +999,19 @@ Note over main : -[CALayer setContents:]
                                const method_t& rhs)
               { return lhs.name < rhs.name; }
           };
-      };
+         };
        ```
 
    7. 数据结构总结
 
       ![Runtime数据结构](/Runtime数据结构.png)
 
-2. 类对象与原类对象
+2. 对象,类对象与原类对象
+
+   - 类对象存储实例方法列表信息
+   - 元类对象存储方法列表等信息
+   - ![image-20190124174604446](/image-20190124174604446-8323164.png)
+   - 如果调用类方法没有对应的实现 但是NSObject有同名的实例方法的实现,会调用同名实例方法
 
 3. 消息传递
 
