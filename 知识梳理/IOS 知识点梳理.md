@@ -1006,26 +1006,237 @@ Note over main : -[CALayer setContents:]
 
       ![Runtime数据结构](/Runtime数据结构.png)
 
-2. 对象,类对象与原类对象
+2. 对象,类对象与原类对象(objc_class->objc_object)
 
    - 类对象存储实例方法列表信息
+
    - 元类对象存储方法列表等信息
+
    - ![image-20190124174604446](/image-20190124174604446-8323164.png)
+
    - 如果调用类方法没有对应的实现 但是NSObject有同名的实例方法的实现,会调用同名实例方法
+
+   - 题目
+
+     ```objc
+     #import "Mobile.h"
+     @interface Phone : Mobile
+     @end
+     @implementation Phone
+     -(id) init
+     {
+       self = [super init];
+         if(self){
+             NSLog(@"%@",NSStringFromClass([self class]));
+             NSLog(@"%@",NSStringFromClass([super class]));
+         }
+         return self;
+     }
+     @end
+     ```
 
 3. 消息传递
 
+   1. `void objc_msgSend(void /*id self,SEL op,...*/)`
+
+      `[self class] <------> objc_msgSend(self,@selector(class))`
+
+   2. `void objc_msgSendSuper(void /*struct objc_super *super,SEL op,...*/)`
+
+      ```c++
+      struct objc_super {
+          /// Specifies an instance of a class.
+          __unsafe_unretained _Nonnull id receiver;
+      
+          /// Specifies the particular superclass of the instance to message. 
+      #if !defined(__cplusplus)  &&  !__OBJC2__
+          /* For compatibility with old objc-runtime.h header */
+          __unsafe_unretained _Nonnull Class class;
+      #else
+          __unsafe_unretained _Nonnull Class super_class;
+      #endif
+          /* super_class is the first class to search */
+      };
+      
+      [super class] <----> objc_msgSendSuper(super,@selector(class))
+      ```
+
+   3. 过程
+
+      ![image-20190129162654739](/image-20190129162654739-8750414.png)
+
 4. 方法缓存
+
+   1. 给定值SEL,目标值是对应的bucket_t中的IMP.
+
+   2. cache_key_t---f(key)--->bucket_t 哈希查找   f(key) = key & mask(举例哈希函数)
+
+   3. 当前类中查找
+
+      - 对于已排序好的列表,采用二分查找算法查找方法对应执行函数
+      - 对于没有排序的列表,采用一般遍历查找方法对应执行函数
+
+   4. 父类逐级查找
+
+      ![image-20190129172117559](/image-20190129172117559.png)
 
 5. 消息转发
 
+   1. +resolveInstanceMethod: 
+
+      ![image-20190130143821008](/image-20190130143821008-8830301.png)
+
 6. Method-Swizzling
+
+   1. 相关方法
+      - class_getInstanceMethod
+      - class_getClassMethod
+      - method_exchangeImplementations
 
 7. 动态添加方法
 
+   1. performSelector:
+   2. class_addMethod
+
 8. 动态方法解析
 
+   1. @dynamic
+      - 动态运行时语言将函数决议推迟到运行时.
+      - 编译时语言在编译期进行幻术决议
+
+9. 题目
+
+   1. [obj foo] 和 objc_msgSend()函数之间有什么关系?
+   2. runtime 如何通过Selector找到对应的IMP地址的?
+   3. 能否向编译后的类中增加实例变量? 不能,但是可以对动态添加的类中增加实例变量需要在objc_registerClassPair前.
+
 ## 内存管理
+
+1. 内存布局
+
+   - ![image-20190130153810710](/image-20190130153810710.png)
+
+2. 内存管理方案
+
+   1. 小对象(NSNumber等) taggedPointer
+
+   2. NONPOINTER_ISA 64位架构下 isa本身占64比特位,本身不需要那么多,剩下的就存储内存管理相关的内容
+
+      - arm64架构下
+
+        ![image-20190130154457708](/image-20190130154457708-8834297.png)
+
+        ![image-20190130154618071](/image-20190130154618071-8834378.png)
+
+   3. 散列表(弱引用表,引用计数表)
+
+      - Side Tables(结构)
+
+        ![image-20190130154740143](/image-20190130154740143-8834460.png)
+
+      - Side Table
+
+        ![image-20190130154800513](/image-20190130154800513-8834480.png)
+
+      - 为什么不是一个Side Tabel?
+
+        存在效率问题
+
+      - 分离锁 提高访问效率
+
+      - 怎样实现款速分流?
+
+        SideTables的本质是一张Hash表
+
+        对象指针(Key)---(Hash函数)--->Side Table(Value)
+
+3. 数据结构
+
+   1. SpinLock_t
+
+      - 是"忙等"的锁,当前锁如果被其它线程获取,当前线程会不断探测这个锁是否有被释放
+      - 适用于轻量访问
+
+   2. RefcountMap
+
+      ptr-----DisguisedPtr(objc_object)---> size_t 哈希查找
+
+   3. size_t
+
+      ![image-20190130160137691](/image-20190130160137691-8835297.png)
+
+   4. weak_table_t 也是hash表
+
+      ![image-20190130160251794](/image-20190130160251794-8835371.png)
+
+4. ARC & MRC
+
+   1. MRC 手动引用计数
+      - alloc
+      - retain
+      - release
+      - retainCount
+      - autorelease
+      - dealloc
+   2. ARC 自动引用计数
+      - ARC是LLVM和Runtime协作的结果
+      - ARC中禁止手动调用retain/release/retainCount/dealloc
+      - ARC中新增weak,strong属性关键字
+
+5. 引用计数
+
+   1. alloc实现 
+
+      经过一系列调用,最终调用了C函数calloc.此时并没有设置引用计数为1
+
+   2. retain实现
+
+      SideTabel& table = sideTables()[this];
+
+      size_t& refcntStorage = table.refcnts[this];
+
+      refcntStorage += SIDE_TABLE_RC_ONE;
+
+   3. release 实现
+
+      ```c++
+      SideTable& table = SideTables()[this];
+      RefCountMap::iterator it = table.refcnts.find(this);
+      it->second -= SIDE_TABLE_RC_ONE;
+      ```
+
+   4. retainCount实现
+
+      ```c++
+      SideTable& table = SideTables()[this];
+      size_t rrefcnt_result = 1;
+      RefcountMap::iterator it = table.refcnts.fin(this);
+      refcnt_result += it->second>>SIDE_TABLE_RC_SHIFT
+      ```
+
+   5. dealloc 实现
+
+      1. 普通流程
+
+         ![image-20190130165102672](/image-20190130165102672-8838262.png)
+
+      2. object_dispose()流程
+
+         ![image-20190130165215729](/image-20190130165215729-8838335.png)
+
+      3. objc_destructInstance()
+
+         ![image-20190130165356061](/image-20190130165356061-8838436.png)
+
+      4. clearDeallocating()
+
+         ![image-20190130165518293](/image-20190130165518293-8838518.png)
+
+6. 弱引用
+
+7. 自动释放池
+
+8. 循环引用
 
 ## Blcok
 
