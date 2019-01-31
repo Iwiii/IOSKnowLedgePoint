@@ -1234,13 +1234,108 @@ Note over main : -[CALayer setContents:]
 
 6. 弱引用
 
+   ``` objc
+   {
+       id __weak obj1 = obj;
+   }
+   
+   {
+       id obj1;
+       objc_initWeak(&obj1,obj);
+   }
+   
+   objc_initWeak()->storeWeak()-weak_register_no_lock()
+   ```
+
 7. 自动释放池
+
+   1. AutoreleasePool实现原理
+
+      ```objc
+      //@autoreleasepool 改写
+      void *ctx = objc_autoreleasePoolPush();
+      //{}中代码
+      objc_autoreleasePoolPop(ctx);
+      
+      AutoreleasePoolPage
+          id* next;
+          AutoreleasePoolPage* const parent;
+          AutoreleasePoolPage* child;
+          pthread_t const thread;
+      ```
+
+      - 是以栈为结点通过双向链表的形式组合而成
+      - 是和线程一一对应的
+      - 在当次runloop将要结束的时候调用AutoreleasePoolPage::pop().
+
+   2. AutoreleasePool为何可以嵌套使用
+      - 欧层嵌套就是多次插入哨兵对象.
+   3. 在for循环中alloc图片数据等内存消耗较大的场景手动插入autoreleasePool.
 
 8. 循环引用
 
+   1. 自循环引用
+   2. 相互循环引用
+   3. 多循环引用
+   4. 考点
+      - 代理
+      - Block
+      - NSTimer
+      - 大环引用
+   5. 如何破除循环引用?
+      - 避免产生循环应用
+      - 在合适的时机手动断环
+   6. 具体解决方案
+      - `__weak`
+      - `__block`  MRC下不会增加引用计数,ARC下回被强引用需要手动解环
+      - `__unsafe_unretain` 不会增加引用计数,避免循环引用,但被修饰对象释放后会产生悬垂指针
+   7. 循环引用示例
+      - NSTimer的循环引用问题(添加中间对象分别对vc 和 timer弱引用)
+   8. 面试题
+      - 什么事ARC?
+      - 为什么weak指针指向的对象在废弃后会自动置为nil?
+      - 苹果是如何实现AutoreleasePool的?
+      - 什么事循环引用?你遇到过哪些循环引用,是怎样解决的
+
 ## Blcok
 
+1. Block介绍
+   - Block是将函数及其执行上下文封装起来的对象
+   - Block调用即是函数的调用
+2. 截获变量
+   1. 基本数据类型 截获其值
+   2. 对象类型 连同 所有权 修饰符一起截获
+   3. 静态局部变量 以指针形式截获局部静态变量
+   4. 全局变量 不截获全局变量
+   5. 静态全局变量 不截获静态全局变量
+3. `__block`修饰符
+   - 一般情况下,对被截获变量进行赋值操作需添加`__block`修饰符
+   - 赋值 != 使用
+   - 需要`__block`修饰符的
+     - 基本数据类型
+     - 对象类型
+   - 不需要`__block`修饰符
+     - 静态局部变量
+     - 全局变量
+     - 静态全局变量
+   -  `__block`修饰的变量变成了对象
+4. Block的内存管理
+5. Block的循环引用
+6. 题目
+   - 什么是Block?
+   - 为什么Block会产生循环引用?
+7. 怎样理解Block截获变量的特性?
+8. 你都遇到过哪些循环引用?你又是怎么解决的?
+
 ## 多线程
+
+1. GCD
+   1. 同步/异步 和 串行/并发
+   2. dispatch_barrier_async
+   3. dispatch_group
+2. NSOperation
+3. NSThread
+4. 多线程与锁
 
 ## RunLoop
 
