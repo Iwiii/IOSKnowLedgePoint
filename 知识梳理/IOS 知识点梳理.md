@@ -1269,6 +1269,7 @@ Note over main : -[CALayer setContents:]
       - 在当次runloop将要结束的时候调用AutoreleasePoolPage::pop().
 
    2. AutoreleasePool为何可以嵌套使用
+
       - 欧层嵌套就是多次插入哨兵对象.
    3. 在for循环中alloc图片数据等内存消耗较大的场景手动插入autoreleasePool.
 
@@ -1287,7 +1288,7 @@ Note over main : -[CALayer setContents:]
       - 在合适的时机手动断环
    6. 具体解决方案
       - `__weak`
-      - `__block`  MRC下不会增加引用计数,ARC下回被强引用需要手动解环
+      - `__block`  MRC下不会增加引用计数,ARC下会被强引用需要手动解环
       - `__unsafe_unretain` 不会增加引用计数,避免循环引用,但被修饰对象释放后会产生悬垂指针
    7. 循环引用示例
       - NSTimer的循环引用问题(添加中间对象分别对vc 和 timer弱引用)
@@ -1333,15 +1334,380 @@ Note over main : -[CALayer setContents:]
    1. 同步/异步 和 串行/并发
    2. dispatch_barrier_async
    3. dispatch_group
+   4. GCD底层的线程 默认不开启runloop
+
 2. NSOperation
+
+   - 需要和NSOperationQueue配合使用来实现多线程方案.
+     - 添加任务依赖
+     - 任务执行状态控制
+       - isReady
+       - isExcuting
+       - isFinished
+       - isCancelled
+       - 如果只重写main方法,底仓控制变更任务执行完成状态,以及任务对出
+       - 如果重写了start方法,自行控制任务状态
+       - 系统是怎样移除一个isFinished=YES的NSOperation的? KVO.
+     - 可以控制最大并发量
+
 3. NSThread
+
+   1. 启动流程 `start()--->创建phread---->main()---->[target performSelector:selctor]---->exit()`,如果想常驻就加入nsrunloop
+   2. start->创建线程->发送通知告诉观察者->调用线程的main函数->exit
+
 4. 多线程与锁
+
+   1. iOS中有哪些锁?
+
+      - @synchronized
+        - 一般在创建单例对象的时候使用,保证多线程环境下创建对象唯一
+      - atomic
+        - 修饰属性关键之
+        - 对被修饰对象进行原子操作(不负责使用)
+      - OSSpinLock(自旋锁)
+        - 循环等待访问,不释放当前资源
+        - 用于轻量级数据访问,简单的int值+1/-1操作
+
+      - NSRecursiveLock (递归锁)
+
+      - NSLock(不能递归,重入会死锁)
+
+      - dispatch_semaphore_t(信号量)
+
+        - `dispatch_semaphore_create(1)`;
+
+          - ```c++
+            struct semaphore{
+                int value;
+                List<thread>;
+            }
+            ```
+
+        - `dispatch-semphore_wait(semaphore,DISPATCH_TIME_FOREVER)`;
+
+           ```c++
+          {
+              S.value = S.value-1;
+              if S.value<0 then Block(S.List);//主动阻塞线程
+          }
+           ```
+
+          
+
+        - `dispatch_semaphore_signal(semaphore)`;
+
+          ```c++
+          {
+              S.value = S.value+1;
+              if S.value <=0 then wakeup(s.List);//唤醒是一个被动行为
+          }
+          ```
+
+   2. 总结
+
+      - 怎样用GCD实现多读单写
+
+      - iOS系统为我们提供的几种多线程技术各自的特点是怎样的?
+
+         GCD(简单的线程同步) NSOperation/NSoperationQueue(状态控制,添加依赖移除依赖) NSThread(常驻现场)
+
+      - NSOperation对象在Finished之后是怎样从queue当中移除掉的?
+
+      - 你都用过哪些锁?结合实际谈谈你是怎样使用的?
 
 ## RunLoop
 
+1. 概念
+
+   - RunLoop是通过内部维护的 事件循环 来对 事件/消息进行管理 的一个对象.
+   - 为什么main函数没有直接结束 因为调用了UIApplicationMain 会启动主线程的runloop (接收消息,处理,等待!=死循环 ,等待是状态切换用户态->内核态)经过一系列处理,主线程的runloop处于休眠状态.触摸屏幕会产生mach_port基于它转成Source1 把主线程唤醒运行 杀死的时候就会退出runloop
+
+2. 数据结构
+
+   - NSRunLoop是对CFRunLoop的封装,提供了面向对象的API
+   - CFRunLoop
+     - pthread(一一对应 RunLoop和线程的关系)
+     - currentMode(CFRunLoopMode)
+       - CFRunLoopMode
+         - name  名称 NSDefaultRunLoopMode
+         - sources0 (集合)
+         - sources1(集合)
+         - observers(数组)
+         - timers(数组)
+       - CFRunLoopSource
+         - source0 需要手动唤醒线程
+         - source1 具备唤醒线程的能力
+       - CFRunLoopTimer 基于事件的定时器 和NSTimer 是toll-free bridge的 (免费桥转换).
+       - CFRunLoopObserver
+         - 观测时间点
+           - kCFRunLoopEntry
+           - kCFRunLoopBeforeTimers
+           - kCFRunLoopBeforeSources
+           - kCFRunLoopBeforeWaiting(用户->内核)
+           - kCFRunLoopAfterWaiting(内核->用户)
+           - kCFRunLoopExit
+       - 关系 一对多
+     - modes(`NSMutableSet<CFRunloopMode>`)
+     - commonModes(`NSMutabelSet<NSString*>`)
+       - CommonMode不是实际存在的一种Mode.
+       - 是同步Source/Timer/Observer到多个Mode中的一种技术方案
+     - commonModesItems(Observer,timer,Source 多个)
+   - CFRunLoopMode
+   - Source/Timer/Observer
+
+3. 事件循环机制
+
+   - 没有消息需要处理时,休眠以避免资源占用 (用户态---(通过系统)——>内核态)
+
+   - 有消息需要处理时,立刻被唤醒(内核态——>用户态)
+
+   - CFRunLoopRun()
+
+     ![image-20190217175254297](/image-20190217175254297.png)
+
+4. RunLoop与NSTimer
+
+   - 滑动TableView的时候我们的定时器还会生效么?
+     - kCFRunLoopDefaultMode ---mode发生切换—— UITrackingRunLoopMode
+   - void CFRunLoopAddTimer(runloop,time,mode)
+     - additemToCommonmodes
+
+5. RunLoop与多线程
+
+   - 线程和RunLoop是一一对应的
+
+   - 自己创建的线程默认是没有RunLoop的
+
+     - 怎样实现一个常驻线程
+
+       - 为当前线程开启一个RunLoop
+
+       - 向该RunLoop添加一个Port/Source 等维持RunLoop的事件循环
+
+       - 启动该RunLoop
+
+       - 代码
+
+         ``` objective-c
+         static NSThread *thread = nil;
+         //标记是否要继续事件循环
+         static BOOL runAlways = YES;
+         + (NSThread *) threadForDispatch{
+             if(thread == nil){
+                 @synchronized(self){
+                     if(thread == nil){
+                         //线程创建
+                         thread = [NSThread alloc] initWithTarget:self selector@selector(runRequest) object:nil];
+                         [thread setName:@"com.iwiii.thread"];
+                         //启动
+                         [thread start];
+                     }
+                 }
+             }
+             return thread;
+         }
+         
+         +(void)request{
+             //创建一个Source
+             CFRunLoopSourceContext context = {0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
+             CFRunLoopSourceRef source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &context);
+             //创建RunLoop,同时向Runloop的defaultMode下面添加source
+             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+             //如果可以运行
+             while(runAlways){
+                 @autoreleasepool {
+                     //令当前runloop在defaultmode下面
+                     CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0e10, true);
+                 }
+             }
+             //某一时机,静态变量runAlways=NO是,可以保证跳出Runloop,线程退出
+             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, kCFRunLoopDefaultMode);
+             CFRelease(source);
+         }
+         ```
+
+     - 总结
+
+       - 什么是RunLoop,他是怎样做到有事做事,没事休息 mach_msg用户态->内核态
+       - RunLoop与线程是怎样的关系? 一一对应,默认没有get的时候创建
+       - 如何实现一个常驻线程
+       - 怎样保证子线程数据回来更新UI的时候不打断UI使用.(主线程runloop加入刷新UI操作,defaultmode下需要)
+
 ## 网络相关
 
+1. HTTP协议
+
+   - 请求/响应报文
+
+     - 请求报文
+
+       ![image-20190217190347192](/image-20190217190347192.png)
+
+     - 响应
+
+       
+
+   - 连接建立流程
+
+     ![image-20190217190517784](/image-20190217190517784.png)
+
+     - GET POST区别
+       - GET请求参数以?分割拼接到URL后面,POST请求参数在Body里面
+       - GET参数长度限制2048个字符,POST一般没有该限制
+       - 从语义角度来回答,GET是获取资源 (安全的 幂等 可缓存的)  POST(非安全的 非幂等的 不可缓存的)
+       - 安全性 : 不应该引起Server端的任何状态变化 (GET HEAD OPTIONS)
+       - 幂等性: 同一个请求方法执行多次和执行一次的效果完全相同(PUT DELETE)
+       - 可缓存性 : 请求是否可以被缓存.(GET HEAD)
+
+   - HTTP的请求方式都有哪些?(GET POST HEAD PUT DELETE OPTIONS)
+
+   - 状态码
+
+     - 你都了解哪些状态码,他们的含义是什么
+       - 2xx 成功
+       - 3xx 网络重定向
+       - 4xx 客户端本身请求有问题
+       - 5xx Server端问题
+
+   - 连接建立流程(三次握手,四次挥手)
+
+     ![image-20190217224909358](/image-20190217224909358.png)
+
+     - HTTP特点
+
+     - 无连接
+       - HTTP的持久连接(提升网络请求效率)
+       - 头部字段 Coonection :keep-alive ;time:20 max:10(最多可以发生多少个http请求)
+       - 怎样判断一个请求是否结束的? 
+         1. Content-length :1024 (数据大小) 根据这个是否到达了这个值
+         2. chunked,最后会有一个空的chunked
+     - 无状态
+       - Cookie/Session
+
+   - Charles抓包原理是怎样的?
+
+     1. 利用中间人攻击
+
+2. HTTPS与网络安全
+
+   - HTTPS 和 HTTP有怎样的区别
+
+      HTTPS = HTTP + SSL/TLS
+
+   - HTTPS连接的建立流程是怎样的?
+
+     ![image-20190217230324385](/image-20190217230324385.png)
+
+     
+
+     - 会话秘钥 = random S + random C + 预主秘钥
+
+     - HTTPS都使用了哪些加密手段?为什么? 
+
+       - 连接建立过程使用非对称加密,非对称加密加密很耗时! (秘钥不一样)
+
+         ![image-20190217231641871](/image-20190217231641871.png)
+
+       - 后续通信过程使用对称加密
+
+         ![image-20190217231747712](/image-20190217231747712.png)
+
+3. TCP/UDP
+
+   - UDP (用户数据报协议)
+     - 无连接
+     - 尽最大努力交付
+     - 面向报文 既不合并也不拆分
+     - 功能 : 复用 分用 差错检测
+   - TCP (传输控制协议)
+     - 面向连接 建立连接 释放连接 三次握手 四次挥手
+     - 可靠传输
+       - 无差错
+       - 不丢失
+       - 不重复
+       - 按序到达
+     - 面向字节流
+     - 流量控制
+       - 滑动窗口协议
+       - ![image-20190217235901256](/image-20190217235901256.png)
+     - 拥塞控制
+       - 慢开始,拥塞避免
+       - 快恢复,快重传
+
+4. DNS解析
+
+   - 域名到IP地址的映射,DNS解析请求采用UDP数据报且明文
+   - 查询方式
+     - 递归查询(我去给你问一下)
+     - 迭代查询(我告诉你谁可能知道)
+   - DNS解析存在哪些常见问题?
+     - DNS劫持
+       - 和HTTP没有关系 DNS发生在HTTP建立之前 UDP数据报 端口号53
+       - 解决方案
+         - httpDNS
+           - 使用HTTP协议向DNS服务器的80端口进行请求(ip直连)
+         - 长连接
+           - 长链Server 通过内网专线http请求 客户端对长连Server长连接
+     - DNS解析转发
+       - 运营商为了节省资源 转发到别的DNS服务器->权威DNS->针对别的DNS服务器返回一个ip,会造成请求缓慢
+
+5. Session/Cookie
+
+   - HTTP协议无状态特点的补偿
+   - 怎样修改Cookie 
+     - 新cookie覆盖旧cookie
+     - 覆盖规则: name,path,domain等需要与原cookie一致
+   - 怎样修改Cookie
+     - 新cookie覆盖旧cookie
+     - 覆盖规则: name,path,domain等需要与原cookie一致
+     - 设置cookie的expires = 过去的一个时间点,或者maxAge=0
+   - 怎样保证Cookie的安全?
+     - 对Cookie进行加密处理
+     - 只在https上携带Cookie
+     - 设置Cookie为httpOnly,防止跨站脚本攻击
+
+   - Cookie主要用来记录用户状态,区分用户;状态保存在客户端
+   -  服务器端设置http相应报文的Set-Cookie首部字段![image-20190218073849085](/image-20190218073849085.png)
+
+   - Session也是用来记录用户状态,区分用户的;状态存放在服务器端
+     - Session 和 Cookie的关系是怎样的?
+       - Session需要依赖于Cookie机制
+       - Session工作流程
+       - ![image-20190218074905455](/image-20190218074905455.png)
+
+6. 总结
+
+   - HTTP中的GET和POST方式有什么区别?
+   - HTTPS连接建立流程是怎样的?
+   - TCP和UDP有什么区别
+   - 请简述TCP的慢开始过程
+   - 客户端怎样避免DNS劫持
+
 ## 设计模式
+
+- 六大设计原则
+  1. 单一职责 一个类只负责一件事
+  2. 依赖倒置 抽象不应该依赖于具体实现,具体实现可以依赖于抽象
+  3. 开闭 对修改关闭 对扩展开放
+  4. 接口隔离 使用多个专门的协议,而不是一个庞大臃肿的协议 协议中的方法要尽量少
+  5. 里式替换 父类可以被子类无缝替换,且原有功能不受任何影响
+  6. 迪米特法则 一个对象应当对其他对象尽可能少的了解 高内聚,低耦合
+
+1. 责任链
+   - 解决需求变更的问题
+2. 桥接
+3. 适配器
+   - 对象适配
+   - 类适配
+4. 单例
+5. 命令
+   - 行为参数化
+   - 降低代码重合度
+6. 总结
+   - 请手写单例实现
+   - 你都知道哪些设计原则,请谈谈你的理解
+   - 能否用一副图简单的表示桥接模式的主题结构
+   - UI事件传递机制是怎样实现的?你对其中运用到的设计模式是怎样理解的?
 
 ## 架构/框架
 
