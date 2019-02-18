@@ -1,7 +1,5 @@
----
 typora-root-url: ./资源/图片
 typora-copy-images-to: ./资源/图片
----
 
 # IOS 知识点梳理
 
@@ -20,7 +18,7 @@ typora-copy-images-to: ./资源/图片
 
 #### UIView 和 CALayer关系
 
-1. UIView为CALayer 提供内容以及负责处理触摸等事件，参与相应链。
+1. UIView为CALayer 提供内容以及负责处理触摸等事件，参与响应链。
 2. CALayer负责显示
 3. 体现了单一职责原则
 
@@ -206,7 +204,7 @@ Note over main : -[CALayer setContents:]
 1. 你用分类都做了那些事
 
    - 声明私有方法
-   - 声明私有方法
+   - 声明私有成员变量
    - 把Framework的私有方法公开
 
 2. 特点
@@ -1084,7 +1082,7 @@ Note over main : -[CALayer setContents:]
 
    1. +resolveInstanceMethod: 
 
-      ![image-20190130143821008](/image-20190130143821008-8830301.png)
+      ![image-20190130143821008](/image-20190130143821008.png)
 
 6. Method-Swizzling
 
@@ -1163,11 +1161,11 @@ Note over main : -[CALayer setContents:]
 
    3. size_t
 
-      ![image-20190130160137691](/image-20190130160137691-8835297.png)
+      ![image-20190130160137691](/image-20190130160137691.png)
 
    4. weak_table_t 也是hash表
 
-      ![image-20190130160251794](/image-20190130160251794-8835371.png)
+      ![image-20190130160251794](/image-20190130160251794.png)
 
 4. ARC & MRC
 
@@ -1360,6 +1358,7 @@ Note over main : -[CALayer setContents:]
    1. iOS中有哪些锁?
 
       - @synchronized
+
         - 一般在创建单例对象的时候使用,保证多线程环境下创建对象唯一
       - atomic
         - 修饰属性关键之
@@ -1386,10 +1385,10 @@ Note over main : -[CALayer setContents:]
         - `dispatch-semphore_wait(semaphore,DISPATCH_TIME_FOREVER)`;
 
            ```c++
-          {
+            {
               S.value = S.value-1;
               if S.value<0 then Block(S.List);//主动阻塞线程
-          }
+            }
            ```
 
           
@@ -1529,7 +1528,7 @@ Note over main : -[CALayer setContents:]
      - 总结
 
        - 什么是RunLoop,他是怎样做到有事做事,没事休息 mach_msg用户态->内核态
-       - RunLoop与线程是怎样的关系? 一一对应,默认没有get的时候创建
+       - RunLoop与线程是怎样的关系? 一一对应,默认get的时候创建
        - 如何实现一个常驻线程
        - 怎样保证子线程数据回来更新UI的时候不打断UI使用.(主线程runloop加入刷新UI操作,defaultmode下需要)
 
@@ -1544,8 +1543,6 @@ Note over main : -[CALayer setContents:]
        ![image-20190217190347192](/image-20190217190347192.png)
 
      - 响应
-
-       
 
    - 连接建立流程
 
@@ -1710,6 +1707,73 @@ Note over main : -[CALayer setContents:]
    - UI事件传递机制是怎样实现的?你对其中运用到的设计模式是怎样理解的?
 
 ## 架构/框架
+
+- 模块化
+- 分层
+- 解耦
+- 降低代码重合度
+
+1. 图片缓存
+
+   1. 怎样设计一个图片缓存框架?
+
+      ![image-20190218174059273](/image-20190218174059273-0482859.png)
+
+   2. 图片通过什么方式进行读写,过程是怎样的?
+
+      - 以图片URL的单向Hash值作为Key 内存查找 磁盘查找 网络下载
+
+   3. 内存的设计上需要考虑哪些问题
+
+      - 存储的Size
+        - `50*10kb 以下 20*100kb 10*100kb以上`
+      - 淘汰策略
+        - 以队列先进先出的方式淘汰
+        - LRU算法 (30分钟之内是否使用过) 
+          - 定时检查 (开销大)
+          - 提高检查触发频率 (每次进行读写时,前后台切换,见缝插针)
+          - 注意开销
+
+   4. 磁盘设计需要考虑哪些问题?
+
+      1. 存储方式
+
+      2. 大小限制
+      3. 淘汰策略(如某一图片存储时间距今已超过7天)
+
+   5. 网络部分的设计需要考虑哪些问题
+
+      - 图片请求最大并发量
+      - 请求超时策略
+      - 请求优先级
+
+   6. 图片解码
+
+       1.对于不同格式图片,解码采用什么方式来做?
+
+      - 应用策略模式对不同图片格式进行解码
+      - 在哪个阶段做图片解码处理 (磁盘读取后,网络请求返回后)
+
+   7. 线程处理 网络部分
+
+2. 阅读时长统计
+
+   1. 怎样设计一个时长统计框架?
+      1. 记录器
+         1. 页面式 push 开始 pop结束
+         2. 流式(微博)
+         3. 自定义式
+      2. 记录管理者
+
+3. 复杂页面架构
+
+   1. 例子:微博APP正文页,去哪儿旅行APP的航班列表,今日头条,腾讯新闻等资讯类app多签首页,脉脉APP的多签首页
+   2. 微博APP正文页
+      - 整体架构
+      - 数据流
+      - 反向更新
+
+4. 客户端整体架构
 
 ## 算法
 
