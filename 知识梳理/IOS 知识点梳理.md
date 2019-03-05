@@ -1,3 +1,7 @@
+---
+typora-root-url: ./资源/图片
+---
+
 typora-root-url: ./资源/图片
 typora-copy-images-to: ./资源/图片
 
@@ -1717,7 +1721,7 @@ Note over main : -[CALayer setContents:]
 
    1. 怎样设计一个图片缓存框架?
 
-      ![image-20190218174059273](/image-20190218174059273-0482859.png)
+      ![image-20190218174059273](/image-20190218174059273.png)
 
    2. 图片通过什么方式进行读写,过程是怎样的?
 
@@ -1770,6 +1774,7 @@ Note over main : -[CALayer setContents:]
    1. 例子:微博APP正文页,去哪儿旅行APP的航班列表,今日头条,腾讯新闻等资讯类app多签首页,脉脉APP的多签首页
    2. 微博APP正文页
       - 整体架构
+        - view viewcontroller viewmodel engine model
       - 数据流
       - 反向更新
 
@@ -1778,6 +1783,54 @@ Note over main : -[CALayer setContents:]
 ## 算法
 
 ## 第三方库
+
+1. AFNetworking
+   - 会话
+   - 网络监听模块
+   - 网络安全模块
+   - 请求序列化
+   - 响应序列化
+   - UIKit继承模块
+   - 类关系图
+     - AFURLSessionManager(创建和管理NSURLSession NSURLSessionTask / 实现NSURLSessionDelegate等协议的代理方法 / 引入AFSecurityPolicy保证请求安全/引入AFNetworkReachablityManger 监听网络状态)
+       - AFHTTPSessionManager
+         - AFURLRequestSerialzation
+         - AFURLResponseSerialzation
+       - NSURLSession
+       - AFSecurityPolicy
+       - AFNetworkReachabliityManager
+
+1. SDWebImageView
+
+2. Reactive Cocoa
+
+   函数响应式编程
+
+   - 信号 核心类 RACSignal 继承于RACStream  一连串状态的封装
+
+     - RACDynamicSignal
+     - RACReturnSignal
+     - RACEmptySignal
+     - RACErrorSignal
+
+   - RACStream
+
+     - empty
+     - return
+     - bind
+     - concat
+     - zipWith
+     - map
+     - take
+     - skip
+     - ignore
+     - filter
+
+   - 订阅 在状态改变时,对应的订阅者RACSubsciber就会收到通知
+
+     start->RACSignal->subscribeNext->RACSubscriber->sendNext->sendCompleted--end
+
+3. AsyncDisplayKit
 
 ## 总结
 
